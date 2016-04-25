@@ -73,10 +73,22 @@ public class SshPool {
      * @return
      */
     public Session getSession() {
+        return getSessionWithRetry(10);
+    }
+
+    public Session getSessionWithRetry(int retry) {
         try {
             return pool.borrowObject(config);
         } catch (final Exception e) {
-            throw new SshPoolException("could not get session from pool.", e);
+            if (--retry < 0) {
+                throw new SshPoolException("could not get session from pool.", e);
+            } else {
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException e1) {
+                }
+                return getSessionWithRetry(retry);
+            }
         }
     }
 
