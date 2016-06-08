@@ -26,6 +26,7 @@ import java.util.Vector;
 
 import com.jcraft.jsch.*;
 import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
+import org.codelibs.elasticsearch.repository.ssh.utils.CryptoUtils;
 import org.codelibs.elasticsearch.repository.ssh.utils.SshConfig;
 import org.codelibs.elasticsearch.repository.ssh.utils.SshPool;
 import org.elasticsearch.common.blobstore.BlobPath;
@@ -35,6 +36,9 @@ import org.elasticsearch.repositories.RepositorySettings;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import com.jcraft.jsch.ChannelSftp.LsEntry;
+
+import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
 
 /**
  * JSchClient manages SSH connections on JSch.
@@ -74,6 +78,18 @@ public class JSchClient {
         if (config.getPassword() == null && config.getPrivateKey() == null) {
             throw new JSchException(
                 "A password and private key for SSH are empty.");
+        }
+
+        String keyString = repositorySettings.settings().get("key");
+        if (keyString != null && keyString.length() != 0) {
+            config.setKey(CryptoUtils.decodeBase64(keyString));
+        }
+        String ivString = repositorySettings.settings().get("iv");
+        if (ivString != null && keyString.length() != 0) {
+            config.setIv(CryptoUtils.decodeBase64(ivString));
+        }
+        if (config.getKey() != null && config.getIv() != null) {
+            config.setEncrypt(true);
         }
 
         this.config = config;
@@ -130,7 +146,10 @@ public class JSchClient {
         final StringBuilder buf = new StringBuilder();
         buf.append(config.getLocation());
         try {
-            for (final String p : paths) {
+            for (String p : paths) {
+                if (config.isEncrypt()) {
+                    p = CryptoUtils.encryptBase64(p.getBytes(), config.getKey(), config.getIv());
+                }
                 buf.append('/').append(p);
                 final String path = buf.toString();
                 int retry = 5;
@@ -171,8 +190,9 @@ public class JSchClient {
         ChannelExec channel = null;
         try {
             channel = openExecChannel(session);
+
             channel.setCommand(
-                "/bin/rm -rf " + config.getLocation() + "/" + blobPath.buildAsString("/"));
+                "/bin/rm -rf " + config.getLocation() + "/" + getBlobPath(blobPath));
             channel.connect();
             //channel.rmdir(location + "/" + blobPath.buildAsString("/"));
         } finally {
@@ -184,9 +204,8 @@ public class JSchClient {
     public InputStream get(final BlobPath blobPath) throws SftpException, JSchException {
         final Session session = sshPool.getSession();
         final ChannelSftp channel = openSftpChannel(session);
-        final InputStream is = channel.get(config.getLocation() + "/"
-            + blobPath.buildAsString("/"));
-        return new InputStream() {
+        final InputStream is = channel.get(config.getLocation() + "/" + getBlobPath(blobPath));
+        InputStream inputStream = new InputStream() {
             @Override
             public int read() throws IOException {
                 return is.read();
@@ -205,14 +224,18 @@ public class JSchClient {
             }
 
         };
+        if (config.isEncrypt()) {
+            inputStream = new CipherInputStream(inputStream,
+                CryptoUtils.getDecryptCipher(config.getKey(), config.getIv()));
+        }
+        return inputStream;
     }
 
     public OutputStream put(final BlobPath blobPath) throws SftpException, JSchException {
         final Session session = sshPool.getSession();
         final ChannelSftp channel = openSftpChannel(session);
-        final OutputStream os = channel.put(config.getLocation() + "/"
-            + blobPath.buildAsString("/"));
-        return new OutputStream() {
+        final OutputStream os = channel.put(config.getLocation() + "/" + getBlobPath(blobPath));
+        OutputStream outputStream = new OutputStream() {
 
             @Override
             public void write(final int b) throws IOException {
@@ -231,6 +254,11 @@ public class JSchClient {
                 sshPool.returnSession(session);
             }
         };
+        if (config.isEncrypt()) {
+            outputStream = new CipherOutputStream(outputStream,
+                CryptoUtils.getEncryptCipher(config.getKey(), config.getIv()));
+        }
+        return outputStream;
     }
 
     public Vector<LsEntry> ls(final BlobPath blobPath) throws SftpException, JSchException {
@@ -239,7 +267,7 @@ public class JSchClient {
         try {
             @SuppressWarnings("unchecked")
             final Vector<LsEntry> entities =
-                channel.ls(config.getLocation() + "/" + blobPath.buildAsString("/"));
+                channel.ls(config.getLocation() + "/" + getBlobPath(blobPath));
             return entities;
         } finally {
             closeChannel(channel);
@@ -251,20 +279,20 @@ public class JSchClient {
         Session session = sshPool.getSession();
         ChannelSftp channel = openSftpChannel(session);
         try {
-            channel.rm(config.getLocation() + "/" + blobPath.buildAsString("/"));
+            channel.rm(config.getLocation() + "/" + getBlobPath(blobPath));
         } finally {
             closeChannel(channel);
             sshPool.returnSession(session);
         }
     }
 
-    public void move(final String sourceBlobName, final String targetBlobName)
+    public void move(BlobPath sourceBlob, BlobPath targetBlob)
         throws SftpException, JSchException {
         Session session = sshPool.getSession();
         ChannelSftp channel = openSftpChannel(session);
         try {
-            channel.rename(config.getLocation() + "/" + sourceBlobName,
-                config.getLocation() + "/" + targetBlobName);
+            channel.rename(config.getLocation() + "/" + getBlobPath(sourceBlob),
+                config.getLocation() + "/" + getBlobPath(targetBlob));
         } finally {
             closeChannel(channel);
             sshPool.returnSession(session);
@@ -273,6 +301,20 @@ public class JSchClient {
 
     public void close() {
         sshPool.close();
+    }
+
+    public SshConfig getConfig() {
+        return config;
+    }
+
+    public String getBlobPath(BlobPath blobPath) {
+        String path = null;
+        if (config.isEncrypt()) {
+            path = CryptoUtils.buildCryptPath(blobPath, config.getKey(), config.getIv());
+        } else {
+            path = blobPath.buildAsString("/");
+        }
+        return path;
     }
 
 }

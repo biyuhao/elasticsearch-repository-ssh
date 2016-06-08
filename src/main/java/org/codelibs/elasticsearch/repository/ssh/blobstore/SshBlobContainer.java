@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Vector;
 
+import org.codelibs.elasticsearch.repository.ssh.utils.CryptoUtils;
 import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.support.AbstractBlobContainer;
@@ -73,10 +74,15 @@ public class SshBlobContainer extends AbstractBlobContainer {
             final MapBuilder<String, BlobMetaData> builder = MapBuilder
                 .newMapBuilder();
             for (final LsEntry entry : entries) {
-                if (entry.getAttrs().isReg()
-                    && entry.getFilename().startsWith(namePrefix)) {
-                    builder.put(entry.getFilename(), new PlainBlobMetaData(
-                        entry.getFilename(), entry.getAttrs().getSize()));
+                String fileName = entry.getFilename();
+                if (blobStore.getClient().getConfig().isEncrypt()) {
+                    byte[] key = blobStore.getClient().getConfig().getKey();
+                    byte[] iv = blobStore.getClient().getConfig().getIv();
+                    fileName = new String(CryptoUtils.decryptBase64(fileName, key, iv));
+                }
+                if (entry.getAttrs().isReg() && fileName.startsWith(namePrefix)) {
+                    builder
+                        .put(fileName, new PlainBlobMetaData(fileName, entry.getAttrs().getSize()));
                 }
             }
             return builder.immutableMap();
@@ -91,7 +97,7 @@ public class SshBlobContainer extends AbstractBlobContainer {
         final BlobPath targetPath = path().add(targetBlobName);
         try {
             JSchClient client = blobStore.getClient();
-            client.move(sourcePath.buildAsString("/"), targetPath.buildAsString("/"));
+            client.move(sourcePath, targetPath);
         } catch (Exception e) {
             throw new IOException(e);
         }
