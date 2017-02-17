@@ -310,7 +310,7 @@ public class JSchClient {
         if (config.isEncrypt()) {
             path = CryptoUtils.buildCryptPath(blobPath, config.getKey(), config.getIv());
         } else {
-            path = blobPath.buildAsString();
+            path = String.join("/", blobPath.toArray());
         }
         return path;
     }
