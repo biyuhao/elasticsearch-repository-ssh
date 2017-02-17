@@ -23,16 +23,15 @@ import java.io.IOException;
 
 import org.codelibs.elasticsearch.repository.ssh.blobstore.JSchClient;
 import org.codelibs.elasticsearch.repository.ssh.blobstore.SshBlobStore;
+import org.elasticsearch.cluster.metadata.RepositoryMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.BlobStore;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.unit.ByteSizeValue;
-import org.elasticsearch.index.snapshots.IndexShardRepository;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.env.Environment;
 import org.elasticsearch.repositories.RepositoryException;
-import org.elasticsearch.repositories.RepositoryName;
-import org.elasticsearch.repositories.RepositorySettings;
 import org.elasticsearch.repositories.blobstore.BlobStoreRepository;
-import org.elasticsearch.threadpool.ThreadPool;
 
 import com.jcraft.jsch.JSchException;
 
@@ -49,24 +48,20 @@ public class SshRepository extends BlobStoreRepository {
     private boolean compress;
 
     @Inject
-    public SshRepository(final RepositoryName name,
-        final RepositorySettings repositorySettings,
-        final IndexShardRepository indexShardRepository,
-        final ThreadPool threadPool) throws IOException {
-        super(name.getName(), repositorySettings, indexShardRepository);
+    public SshRepository(RepositoryMetaData metadata, Environment environment,
+                         NamedXContentRegistry namedXContentRegistry) throws IOException {
+        super(metadata, environment.settings(), namedXContentRegistry);
 
         try {
             blobStore = new SshBlobStore(settings, new JSchClient(
-                settings, repositorySettings, threadPool));
+                    settings, metadata));
         } catch (final JSchException e) {
-            throw new RepositoryException(name.name(),
-                "Failed to initialize SSH configuration.", e);
+            throw new RepositoryException(metadata.name(),
+                    "Failed to initialize SSH configuration.", e);
         }
 
-        chunkSize = repositorySettings.settings().getAsBytesSize("chunk_size",
-            settings.getAsBytesSize("chunk_size", null));
-        compress = repositorySettings.settings().getAsBoolean("compress",
-            settings.getAsBoolean("compress", false));
+        this.chunkSize = metadata.settings().getAsBytesSize("chunk_size", null);
+        this.compress = metadata.settings().getAsBoolean("compress", false);
         basePath = BlobPath.cleanPath();
     }
 

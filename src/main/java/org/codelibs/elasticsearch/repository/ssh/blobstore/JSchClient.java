@@ -29,11 +29,10 @@ import org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig;
 import org.codelibs.elasticsearch.repository.ssh.utils.CryptoUtils;
 import org.codelibs.elasticsearch.repository.ssh.utils.SshConfig;
 import org.codelibs.elasticsearch.repository.ssh.utils.SshPool;
+import org.elasticsearch.cluster.metadata.RepositoryMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.repositories.RepositorySettings;
-import org.elasticsearch.threadpool.ThreadPool;
 
 import com.jcraft.jsch.ChannelSftp.LsEntry;
 
@@ -52,26 +51,25 @@ public class JSchClient {
     private SshPool sshPool;
 
     public JSchClient(final Settings componentSettings,
-        final RepositorySettings repositorySettings,
-        final ThreadPool threadPool) throws JSchException {
+        final RepositoryMetaData metaData) throws JSchException {
 
         SshConfig config = new SshConfig();
-        config.setHost(repositorySettings.settings().get("host", componentSettings.get("host")));
+        config.setHost(metaData.settings().get("host", componentSettings.get("host")));
         config.setPort(
-            repositorySettings.settings().getAsInt("port", componentSettings.getAsInt("port", 22)));
+                metaData.settings().getAsInt("port", componentSettings.getAsInt("port", 22)));
         config.setUsername(
-            repositorySettings.settings().get("username", componentSettings.get("username")));
+                metaData.settings().get("username", componentSettings.get("username")));
         config.setPassword(
-            repositorySettings.settings().get("password", componentSettings.get("password")));
+                metaData.settings().get("password", componentSettings.get("password")));
         config.setLocation(
-            repositorySettings.settings().get("location", componentSettings.get("location", "~/")));
+                metaData.settings().get("location", componentSettings.get("location", "~/")));
         config.setPrivateKey(
-            repositorySettings.settings().get("private_key", componentSettings.get("private_key")));
+                metaData.settings().get("private_key", componentSettings.get("private_key")));
         config.setPassphrase(
-            repositorySettings.settings().get("passphrase", componentSettings.get("passphrase")));
+                metaData.settings().get("passphrase", componentSettings.get("passphrase")));
         config.setKnownHosts(
-            repositorySettings.settings().get("known_hosts", componentSettings.get("known_hosts")));
-        config.setIgnoreHostKeyChecking(repositorySettings.settings()
+                metaData.settings().get("known_hosts", componentSettings.get("known_hosts")));
+        config.setIgnoreHostKeyChecking(metaData.settings()
             .getAsBoolean("ignore_host_key",
                 componentSettings.getAsBoolean("ignore_host_key", false)));
 
@@ -80,11 +78,11 @@ public class JSchClient {
                 "A password and private key for SSH are empty.");
         }
 
-        String keyString = repositorySettings.settings().get("key");
+        String keyString = metaData.settings().get("key");
         if (keyString != null && keyString.length() != 0) {
             config.setKey(CryptoUtils.decodeBase64(keyString));
         }
-        String ivString = repositorySettings.settings().get("iv");
+        String ivString = metaData.settings().get("iv");
         if (ivString != null && keyString.length() != 0) {
             config.setIv(CryptoUtils.decodeBase64(ivString));
         }
@@ -96,10 +94,10 @@ public class JSchClient {
 
         GenericKeyedObjectPoolConfig poolConfig = new GenericKeyedObjectPoolConfig();
         poolConfig.setMaxTotalPerKey(5);
-        poolConfig.setMinEvictableIdleTimeMillis(repositorySettings.settings()
+        poolConfig.setMinEvictableIdleTimeMillis(metaData.settings()
             .getAsLong("session_expire", componentSettings.getAsLong("session_expire", 60000L)));
 
-        TimeValue cleanInterval = repositorySettings.settings().getAsTime("clean_interval",
+        TimeValue cleanInterval = metaData.settings().getAsTime("clean_interval",
             componentSettings.getAsTime("clean_interval", TimeValue.timeValueMinutes(1)));
         poolConfig.setJmxEnabled(false);
         poolConfig.setTimeBetweenEvictionRunsMillis(cleanInterval.getMillis());
@@ -312,7 +310,7 @@ public class JSchClient {
         if (config.isEncrypt()) {
             path = CryptoUtils.buildCryptPath(blobPath, config.getKey(), config.getIv());
         } else {
-            path = blobPath.buildAsString("/");
+            path = blobPath.buildAsString();
         }
         return path;
     }

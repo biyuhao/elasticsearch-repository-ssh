@@ -19,27 +19,20 @@
 
 package org.codelibs.elasticsearch.repository.ssh;
 
-import org.elasticsearch.common.logging.Loggers;
-import org.elasticsearch.index.snapshots.blobstore.BlobStoreIndexShardRepository;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.env.Environment;
 import org.elasticsearch.plugins.Plugin;
-import org.elasticsearch.repositories.RepositoriesModule;
+import org.elasticsearch.plugins.RepositoryPlugin;
+import org.elasticsearch.repositories.Repository;
 
-public class RepositorySshPlugin extends Plugin {
+import java.util.Collections;
+import java.util.Map;
+
+public class RepositorySshPlugin extends Plugin implements RepositoryPlugin {
 
     @Override
-    public String name() {
-        return "repository-ssh";
-    }
-
-    @Override
-    public String description() {
-        return "This plugin provides SSH repository for Snapshot/Restore.";
-    }
-
-    public void onModule(RepositoriesModule repositoriesModule) {
-        Loggers.getLogger(RepositorySshPlugin.class).info("trying to register repository-ssh...");
-        repositoriesModule.registerRepository(SshRepository.TYPE, SshRepository.class,
-            BlobStoreIndexShardRepository.class);
+    public Map<String, Repository.Factory> getRepositories(Environment env, NamedXContentRegistry namedXContentRegistry) {
+        return Collections.singletonMap(SshRepository.TYPE, (metadata) -> new SshRepository(metadata, env, namedXContentRegistry));
     }
 
 }

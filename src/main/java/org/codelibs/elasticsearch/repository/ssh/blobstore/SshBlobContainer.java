@@ -31,7 +31,6 @@ import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.support.AbstractBlobContainer;
 import org.elasticsearch.common.blobstore.support.PlainBlobMetaData;
-import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.collect.MapBuilder;
 
 import com.jcraft.jsch.ChannelSftp.LsEntry;
@@ -87,7 +86,7 @@ public class SshBlobContainer extends AbstractBlobContainer {
             }
             return builder.immutableMap();
         } catch (Exception e) {
-            throw new IOException("Failed to load files in " + path().buildAsString("/"), e);
+            throw new IOException("Failed to load files in " + path().buildAsString(), e);
         }
     }
 
@@ -133,7 +132,7 @@ public class SshBlobContainer extends AbstractBlobContainer {
             JSchClient client = blobStore.getClient();
             return client.get(path);
         } catch (Exception e) {
-            throw new IOException("Failed to load " + path.buildAsString("/"), e);
+            throw new IOException("Failed to load " + path.buildAsString(), e);
         }
     }
 
@@ -144,22 +143,13 @@ public class SshBlobContainer extends AbstractBlobContainer {
         Streams.copy(inputStream, stream);
     }
 
-    @Override
-    public void writeBlob(String blobName, BytesReference bytes) throws IOException {
-        try (OutputStream stream = createOutput(blobName)) {
-            bytes.writeTo(stream);
-        }
-
-    }
-
-
     private OutputStream createOutput(final String blobName) throws IOException {
         final BlobPath path = path().add(blobName);
         try {
             JSchClient client = blobStore.getClient();
             return client.put(path);
         } catch (Exception e) {
-            throw new IOException("Failed to open " + path.buildAsString("/"), e);
+            throw new IOException("Failed to open " + path.buildAsString(), e);
         }
     }
 
